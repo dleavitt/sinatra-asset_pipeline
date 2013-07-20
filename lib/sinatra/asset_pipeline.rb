@@ -5,23 +5,27 @@ require 'sprockets-helpers'
 module Sinatra
   module AssetPipeline
     def self.registered(app)
-      # TODO: only set if unset
-      app.set :sprockets, Sprockets::Environment.new(app.root)
-      app.set :assets_prefix, "/assets"
-      app.set :assets_digest, true
+      app.set_default :sprockets, Sprockets::Environment.new(app.root)
+      app.set_default :assets_prefix, "/assets"
+      app.set_default :assets_digest, true
 
-      app.set :static, true
-      app.set :static_cache_control, [:public, :max_age => 525600]
+      app.set_default :static, true
+      app.set_default :static_cache_control, [:public, :max_age => 525600]
 
-      # TODO: make configurable
-      %w(javascripts stylesheets images).each do |subdir|
-        app.sprockets.append_path File.join(app.root, 'assets', subdir)
-        app.sprockets.append_path File.join(app.root, 'vendor', 'assets', subdir)
-        %w(vendor lib app).each do |base_dir|
-          # load for all gems
-          Gem.loaded_specs.map(&:last).each do |gemspec|
-            path = File.join(gemspec.gem_dir, base_dir, "assets", subdir)
-            app.sprockets.append_path path if File.directory? path
+      app.set_default :assets_dirs, [ 'assets',
+                                      ['app',     'assets'],
+                                      ['lib',     'assets'],
+                                      ['vendor',  'assets'] ]
+
+      app.assets_dirs.each do |asset_dir|
+        asset_dir = [asset_dir] unless asset_dir.is_a?(Array)
+        Dir[File.join(*(asset_dir + ["*"]))].each do |path|
+          app.sprockets.append_path path  if File.directory? path
+        end
+
+        Gem.loaded_specs.map(&:last).each do |gemspec|
+          Dir[File.join(*[[gemspec.gem_dir] + asset_dir + ["*"]])].each do |path|
+            app.sprockets.append_path path  if File.directory? path
           end
         end
       end
@@ -37,10 +41,14 @@ module Sinatra
 
       # TODO: this whole bit seems pretty ghetto.
       # What's the equivalent of .mount in sinatra?
-      app.get app.assets_prefix+"/*" do
+      app.get app.assets_prefix + "/*" do
         env["PATH_INFO"].gsub!(app.assets_prefix, "")
         app.sprockets.call(env)
       end
+    end
+
+    def set_default(key, default)
+      self.set(key, default) unless self.settings.respond_to? key
     end
   end
 end
